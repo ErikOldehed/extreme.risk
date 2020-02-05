@@ -1,2 +1,2 @@
 # extreme.risk
-R script that calculates extreme value parameters and risk estimates from the GEV and GP distributions with confidence intervals in a single function.
+Calculates extreme value parameters and risk estimates from the GEV and GP distributions with confidence intervals in a single function. Two choices of confidence intervals are available, asymptotic normal intervals using the delta method for the risk estimates and percentile bootstrap intervals. The paramaters are estimated using either maximum likelihood, probability weighted moment methods or hills for the GPD. This script was created using the packages {\textit{fExtremes}} for the extreme value model fit, {\textit{distillery}} for bootstrap intervals and {\textit{VaRES}} for VaR estimates.
