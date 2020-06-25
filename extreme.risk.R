@@ -14,7 +14,6 @@ extreme.risk <-
   {
     library(fExtremes)
     library(distillery)
-    library(VaRES)
     #Constants
     k = round(sqrt(length(data)))
     q = 1 - p
@@ -28,59 +27,59 @@ extreme.risk <-
             type = type
           ))
         xi = fit.GEV@fit$par.ests[1]
-        sigma = fit.GEV@fit$par.ests[3]
+        beta = fit.GEV@fit$par.ests[3]
         mu = fit.GEV@fit$par.ests[2]
-        f = function (q, mu, sigma, xi) 
-          {
-              q = 1 - q
-            var = mu - (sigma/xi) + (sigma/xi) * (-log(p))^(-xi)
-            return(var)
-          }
+        n=fit.GEV@fit$n
+        f = function (p) 
+        {
+          var = mu - (beta/xi)*(1 - (-n*log(p))^(-xi))
+          return(var)
+        }
         if (estimate == "ES") {
-          est = (1 / q) * integrate(f,
-                                    lower = 0,
-                                    upper = q,
-                                    stop.on.error = FALSE)$value
+          est = (1 / (1-p)) * integrate(f,
+                                        lower = p,
+                                        upper = 1,
+                                        stop.on.error = FALSE)$value
           if (CI == "delta") {
-            F_bar.inv = length(data) / length(as.numeric(data)[as.numeric(data) > threshold])
+            # F_bar.inv = length(data) / length(as.numeric(data)[as.numeric(data) > threshold])
             h = function(alpha) {
-              threshold + (beta / xi) * (((1 - alpha) * F_bar.inv) ^ (-xi) - 1)
-              g = integrate(
-                h,
-                lower = p.es,
-                upper = 1,
-                stop.on.error = FALSE
-              )$value
-              ES.dx = deriv( ~ mu - (beta / xi) + (beta / xi) * (1 / (1 - p.es)) * g,
-                             c("xi", "mu", "beta"))
-              d.ES = attr(eval(ES.dx), "gradient")
-              V = fit.GEV@fit$varcov
-              ES.se = sqrt(d.ES %*% V %*% base::t(d.ES))
-              L = est - qnorm(1 - alpha / 2) * ES.se / sqrt(round(length(data) / block))
-              U = est + qnorm(1 - alpha / 2) * ES.se / sqrt(round(length(data) / block))
-              est = c(est, L, U) * 100
+              (- n*log(alpha))^(-xi)
             }
+            g = integrate(
+              h,
+              lower = p,
+              upper = 1,
+              stop.on.error = FALSE
+            )$value
+            ES.dx = deriv( ~ mu - (beta / xi) + (beta / xi) * (1 / (1 - p)) * g,
+                           c("xi", "mu", "beta"))
+            d.ES = attr(eval(ES.dx), "gradient")
+            V = fit.GEV@fit$varcov
+            ES.se = sqrt(d.ES %*% V %*% base::t(d.ES))
+            L = est - qnorm(1 - alpha / 2) * ES.se 
+            U = est + qnorm(1 - alpha / 2) * ES.se 
+            est = c(est, L, U)
           }
         }
         if (estimate == "VaR") {
-          est = as.numeric(f(q))
+          est = as.numeric(f(p))
           if (CI == "delta") {
-            VaR.dx = deriv( ~ mu - (beta / xi) * (1 - (-log(p.var)) ^ (-xi)), c("xi", "mu", "beta"))
+            VaR.dx = deriv( ~ mu - (beta / xi) * (1 - (-n*log(p)) ^ (-xi)), c("xi", "mu", "beta"))
             d.VaR = attr(eval(VaR.dx), "gradient")
             V = fit.GEV@fit$varcov
             VaR.se = sqrt(d.VaR %*% V %*% base::t(d.VaR))
-            L = est - qnorm(1 - alpha / 2) * VaR.se / sqrt(round(length(data) / block))
-            U = est + qnorm(1 - alpha / 2) * VaR.se / sqrt(round(length(data) / block))
-            est = c(est, L, U) * 100
+            L = est - qnorm(1 - alpha / 2) * VaR.se 
+            U = est + qnorm(1 - alpha / 2) * VaR.se 
+            est = c(est, L, U)
           }
         }
         if (estimate == "xi") {
-          l = xi - qnorm(1 - alpha / 2) * fit.GEV@fit$par.ses[1] / sqrt(k)
-          u = xi + qnorm(1 - alpha / 2) * fit.GEV@fit$par.ses[1] / sqrt(k)
+          l = xi - qnorm(1 - alpha / 2) * fit.GEV@fit$par.ses[1]
+          u = xi + qnorm(1 - alpha / 2) * fit.GEV@fit$par.ses[1] 
           est = c(xi, l, u)
         }
         if (estimate == "beta") {
-          est = sigma
+          est = beta
         }
         if (estimate == "mu") {
           est = mu
@@ -109,60 +108,67 @@ extreme.risk <-
           xi = fit.GPD@fit$par.ests[1]
           beta = fit.GPD@fit$par.ests[2]
         }
-        f = function(q) {
-          threshold + (beta / xi) * ((q * length(data) / length(as.numeric(data)[as.numeric(data) > threshold])) ^ (-xi) - 1)
+        f = function(p) {
+          threshold + (beta / xi) * (((1-p) * length(data) / length(as.numeric(data)[as.numeric(data) > threshold])) ^ (-xi) - 1)
         }
         if (estimate == "ES") {
-          est = (1 / (1 - xi)) * (f(q) + (beta - xi * threshold))
+          est = (1 / (1 - xi)) * (f(p) + (beta - xi * threshold))
           if (CI == "delta") {
             if (method == "hills") {
-              ES.dx = deriv( ~ (beta / xi) * ((q ^ (-xi)) / (1 - xi) - 1), c("beta", "xi"))
+              zeta=length(as.numeric(data)[as.numeric(data) > threshold])/length(data)
+              ES.dx = deriv( ~threshold + (beta / xi) * (((q/zeta)  ^ (-xi)) / (1 - xi) - 1), c("zeta","beta", "xi"))
               d.ES = attr(eval(ES.dx), "gradient")
               xi.var = xi ^ 2 / k
+              var_zeta=zeta*(1-zeta)/length(data)
               beta.var = ((threshold * xi) ^ 2) / k
               cov.beta.xi = threshold * xi.var
-              V = rbind(c(beta.var, cov.beta.xi), c(cov.beta.xi, xi.var))
+              V = rbind(c(var_zeta,0,0),c(0,beta.var, cov.beta.xi), c(0,cov.beta.xi, xi.var))
               ES.se = sqrt(d.ES %*% V %*% base::t(d.ES))
-              L = est - qnorm(1 - alpha / 2) * ES.se / sqrt(k)
-              U = est + qnorm(1 - alpha / 2) * ES.se / sqrt(k)
-              est = c(est, L, U) * 100
+              L = est - qnorm(1 - alpha / 2) * ES.se 
+              U = est + qnorm(1 - alpha / 2) * ES.se 
+              est = c(est, L, U)
             }
             if (method == "standard") {
-              ES.dx = deriv( ~ (beta / xi) * ((q ^ (-xi)) / (1 - xi) - 1), c("xi", "beta"))
+              zeta=   length(as.numeric(data)[as.numeric(data) > threshold])/length(data)
+              var_zeta=zeta*(1-zeta)/length(data)
+              ES.dx = deriv( ~threshold + (beta / xi) * (((q/zeta) ^ (-xi)) / (1 - xi) - 1), c("zeta","xi", "beta"))
               d.ES = attr(eval(ES.dx), "gradient")
-              V = fit.GPD@fit$varcov
+              V = rbind(c(var_zeta,0,0),c(0,fit.GPD@fit$varcov[1,1:2]),c(0,fit.GPD@fit$varcov[2,1:2]))
               ES.se = sqrt(d.ES %*% V %*% base::t(d.ES))
-              L = est - qnorm(1 - alpha / 2) * ES.se / sqrt(k)
-              U = est + qnorm(1 - alpha / 2) * ES.se / sqrt(k)
-              est = c(est, L, U) * 100
+              L = est - qnorm(1 - alpha / 2) * ES.se 
+              U = est + qnorm(1 - alpha / 2) * ES.se 
+              est = c(est, L, U)
             }
           }
         }
         if (estimate == "VaR") {
-          est = as.numeric(f(q))
+          est = as.numeric(f(p))
           if (CI == "delta") {
             if (method == "hills") {
-              F_bar.inv = length(data) / length(as.numeric(data)[as.numeric(data) > threshold])
-              VaR.dx = deriv( ~ threshold + (beta / xi) * ((q * F_bar.inv) ^ (-xi) - 1), c("beta", "xi"))
+              zeta=length(as.numeric(data)[as.numeric(data) > threshold])/length(data)
+              VaR.dx = deriv( ~ threshold + (beta / xi) * ((q / zeta) ^ (-xi) - 1), c("zeta","beta", "xi"))
               d.VaR = attr(eval(VaR.dx), "gradient")
               xi.var = xi ^ 2 / k
+              var_zeta=zeta*(1-zeta)/length(data)
+              # (length(as.numeric(data)[as.numeric(data) > threshold])/length(data))*(1-   (length(as.numeric(data)[as.numeric(data) > threshold])/length(data)))/length(data)
               beta.var = ((threshold * xi) ^ 2) / k
               cov.beta.xi = threshold * xi.var
-              V = rbind(c(beta.var, cov.beta.xi), c(cov.beta.xi, xi.var))
+              V = rbind(c(var_zeta,0,0),c(0,beta.var, cov.beta.xi), c(0,cov.beta.xi, xi.var))
               VaR.se = sqrt(d.VaR %*% V %*% base::t(d.VaR))
-              L = est - qnorm(1 - alpha / 2) * VaR.se / sqrt(k)
-              U = est + qnorm(1 - alpha / 2) * VaR.se / sqrt(k)
-              est = c(est, L, U) * 100
+              L = est - qnorm(1 - alpha / 2) * VaR.se 
+              U = est + qnorm(1 - alpha / 2) * VaR.se 
+              est = c(est, L, U) 
             }
             if (method == "standard") {
-              F_bar.inv = length(data) / length(as.numeric(data)[as.numeric(data) > threshold])
-              VaR.dx = deriv( ~ threshold + (beta / xi) * ((q * F_bar.inv) ^ (-xi) - 1), c("xi", "beta"))
+              zeta =  length(as.numeric(data)[as.numeric(data) > threshold])/length(data) 
+              var_zeta=zeta*(1-zeta)/length(data)
+              VaR.dx = deriv( ~ threshold + (beta / xi) * ((q / zeta) ^ (-xi) - 1), c("zeta","xi", "beta"))
               d.VaR = attr(eval(VaR.dx), "gradient")
-              V = fit.GPD@fit$varcov
+              V = rbind(c(var_zeta,0,0),c(0,fit.GPD@fit$varcov[1,1:2]),c(0,fit.GPD@fit$varcov[2,1:2]))
               VaR.se = sqrt(d.VaR %*% V %*% base::t(d.VaR))
-              L = est - qnorm(1 - alpha / 2) * VaR.se / sqrt(k)
-              U = est + qnorm(1 - alpha / 2) * VaR.se / sqrt(k)
-              est = c(est, L, U) * 100
+              L = est - qnorm(1 - alpha / 2) * VaR.se 
+              U = est + qnorm(1 - alpha / 2) * VaR.se 
+              est = c(est, L, U) 
             }
           }
         }
@@ -172,8 +178,8 @@ extreme.risk <-
             l = xi - qnorm(1 - alpha / 2) * xi / sqrt(k)
           }
           if (method == "standard") {
-            u = xi + qnorm(1 - alpha / 2) * fit.GPD@fit$par.ses[1] / sqrt(k)
-            l = xi - qnorm(1 - alpha / 2) * fit.GPD@fit$par.ses[1] / sqrt(k)
+            u = xi + qnorm(1 - alpha / 2) * fit.GPD@fit$par.ses[1] 
+            l = xi - qnorm(1 - alpha / 2) * fit.GPD@fit$par.ses[1] 
           }
           est = c(xi, l, u)
         }
@@ -197,7 +203,7 @@ extreme.risk <-
         )
         CI.boot = ci(boot , alpha = alpha, type = "perc")
         CI.boot = CI.boot$perc[1:3]
-        est = c(CI.boot[2], CI.boot[1], CI.boot[3]) * 100
+        est = c(CI.boot[2], CI.boot[1], CI.boot[3]) 
       }
       if (estimate == "ES") {
         boot = booter(
@@ -211,19 +217,10 @@ extreme.risk <-
         )
         CI.boot = ci(boot , alpha = alpha, type = "perc")
         CI.boot = CI.boot$perc[1:3]
-        est = c(CI.boot[2], CI.boot[1], CI.boot[3]) * 100
+        est = c(CI.boot[2], CI.boot[1], CI.boot[3]) 
       }
     }
     if (CI == "delta") {
-      est = frisk(data)
-    }
-    if (estimate == "beta") {
-      est = frisk(data)
-    }
-    if (estimate == "mu") {
-      est = frisk(data)
-    }
-    if (estimate == "xi") {
       est = frisk(data)
     }
     if (length(est) > 1) {
